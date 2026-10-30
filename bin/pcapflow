@@ -1,0 +1,84 @@
+#!/usr/bin/env perl
+# pcapflow - summarise pcap captures into bidirectional flows
+use strict;
+use warnings;
+use FindBin;
+use lib "$FindBin::RealBin/../lib";
+use Getopt::Long qw(:config bundling no_ignore_case);
+use PcapFlow::Analyzer;
+use PcapFlow::Parallel;
+use PcapFlow::Report qw(summary_text flows_csv csv_header csv_line to_json);
+
+my %o = ( format => 'text', top => 10, jobs => 1, idle => 60, close => 5 );
+GetOptions(
+    'f|filter=s'        => \$o{filter},
+    'F|format=s'        => \$o{format},
+    'n|top=i'           => \$o{top},
+    'j|jobs=i'          => \$o{jobs},
+    'idle-timeout=f'    => \$o{idle},
+    'close-timeout=f'   => \$o{close},
+    'c|verify-checksums' => \$o{verify},
+    's|stream'          => \$o{stream},
+    't|talkers'         => \$o{talkers},
+    'h|help'            => \$o{help},
+) or usage(2);
+usage(0) if $o{help};
+usage(2) unless @ARGV;
+usage(2) unless $o{format} =~ /^(text|csv|json)$/;
+die "pcapflow: --stream cannot be combined with --jobs\n" if $o{stream} && $o{jobs} > 1;
+die "pcapflow: stdin ('-') cannot be used with --jobs\n"
+  if $o{jobs} > 1 && grep { $_ eq '-' } @ARGV;
+
+my %aopt = (
+    filter           => $o{filter},
+    idle_timeout     => $o{idle},
+    close_timeout    => $o{close},
+    verify_checksums => $o{verify},
+);
+
+my $res = eval {
+    if ( $o{jobs} > 1 && @ARGV > 1 ) {
+        PcapFlow::Parallel::run( files => [@ARGV], jobs => $o{jobs}, %aopt );
+    }
+    else {
+        if ( $o{stream} ) {
+            $| = 1;
+            print csv_header();
+            $aopt{on_flow} = sub { print csv_line( $_[0] ) };
+        }
+        my $an = PcapFlow::Analyzer->new(%aopt);
+        $an->process($_) for @ARGV;
+        $an->finish;
+    }
+};
+if ( !$res ) {
+    ( my $e = $@ ) =~ s/ at \S+ line \d+\.?\n?$//;
+    chomp $e;
+    print STDERR "pcapflow: $e\n";
+    exit 1;
+}
+exit 0 if $o{stream};
+
+if    ( $o{format} eq 'csv' )  { print flows_csv( $res->{flows} ) }
+elsif ( $o{format} eq 'json' ) { print to_json($res) }
+else { print summary_text( $res, top => $o{top}, talkers => $o{talkers} ) }
+exit 0;
+
+sub usage {
+    my $code = shift;
+    my $fh   = $code ? \*STDERR : \*STDOUT;
+    print {$fh} <<'USAGE';
+usage: pcapflow [options] FILE...      (FILE '-' reads stdin)
+
+  -f, --filter EXPR       tcpdump-style filter, e.g. 'tcp and dst port 443'
+  -F, --format FMT        text (default), csv or json
+  -n, --top N             flows/talkers to show in text output (default 10)
+  -t, --talkers           also list top talkers by bytes
+  -j, --jobs N            process files in N parallel worker processes
+  -s, --stream            print each flow as CSV the moment it expires
+  -c, --verify-checksums  verify IPv4 header checksums
+      --idle-timeout S    end a flow after S idle seconds (default 60)
+      --close-timeout S   linger after TCP FIN/RST (default 5)
+USAGE
+    exit $code;
+}

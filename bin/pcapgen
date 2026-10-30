@@ -1,0 +1,39 @@
+#!/usr/bin/env perl
+# pcapgen - write a deterministic synthetic capture (and its ground truth)
+use strict;
+use warnings;
+use FindBin;
+use lib "$FindBin::RealBin/../lib";
+use Getopt::Long;
+use PcapFlow::Gen;
+use PcapFlow::Report qw(csv_header csv_line);
+
+my %lt = ( ethernet => 1, raw => 101, sll => 113, sll2 => 276 );
+my %o  = ( flows => 1000, seed => 1, link => 'ethernet', v6 => 20, vlan => 10 );
+GetOptions(
+    'flows=i'    => \$o{flows},
+    'seed=i'     => \$o{seed},
+    'link=s'     => \$o{link},
+    'v6-pct=i'   => \$o{v6},
+    'vlan-pct=i' => \$o{vlan},
+    'o|out=s'    => \$o{out},
+    'truth=s'    => \$o{truth},
+) or die "usage: pcapgen [--flows N] [--seed S] [--link ethernet|sll|sll2|raw] -o FILE [--truth CSV]\n";
+die "pcapgen: -o FILE required ('-' for stdout)\n" unless defined $o{out};
+die "pcapgen: unknown --link $o{link}\n" unless $lt{ $o{link} };
+
+my $g = PcapFlow::Gen->new( seed => $o{seed} )->generate(
+    flows => $o{flows}, linktype => $lt{ $o{link} },
+    v6_pct => $o{v6}, vlan_pct => $o{vlan},
+);
+my $n = PcapFlow::Gen->write_pcap( $o{out} eq '-' ? '/dev/stdout' : $o{out}, $g );
+if ( defined $o{truth} ) {
+    open my $fh, '>', $o{truth} or die "pcapgen: $o{truth}: $!\n";
+    print {$fh} csv_header();
+    for my $t ( @{ $g->{truth} } ) {
+        print {$fh} csv_line( { %$t, first => $t->{first_us} / 1e6, last => $t->{last_us} / 1e6,
+            tcp_flags => '', end => 'truth' } );
+    }
+    close $fh;
+}
+printf STDERR "pcapgen: %d flows, %d packets\n", $o{flows}, $n;
