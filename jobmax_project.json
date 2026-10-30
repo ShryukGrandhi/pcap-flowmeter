@@ -1,0 +1,17 @@
+{
+  "name": "pcap-flowmeter",
+  "language": "Perl",
+  "tech": ["Perl", "Linux/Unix", "tcpdump/libpcap", "TCP/IP networking", "fork/pipe/select IPC", "GitHub Actions CI"],
+  "targets": ["Perl", "Linux/Unix", "network protocols (Ethernet, VLAN, IPv4, IPv6, TCP, UDP, ICMP)", "Unix process management and pipelines", "automated testing and benchmarking"],
+  "bullets": [
+    "Built a Perl packet-capture flow meter on Linux/Unix: decodes tcpdump pcaps (Ethernet/VLAN, SLL, IPv4/IPv6, TCP/UDP) into NetFlow-style flows at 176k pkts/s",
+    "Wrote a recursive-descent compiler for tcpdump filter syntax in Perl; CI runs real tcpdump and all 26 tested expressions select identical packets",
+    "Added fork/pipe/select parallel mode for rotated captures (2.02x at 4 workers); 20,000/20,000 flows matched ground truth exactly, 306 tests on Linux CI"
+  ],
+  "summary": {
+    "what": "A pure-Perl command-line tool that reads libpcap capture files or a tcpdump pipe, decodes each frame down to TCP/UDP/ICMP, and groups packets into bidirectional flows with per-direction packet/byte counts, TCP flags, handshake RTT and end reason, with text, CSV, JSON and streaming output.",
+    "how": "Separate Perl modules for the pcap reader/writer, a layered decoder (Ethernet/802.1Q, Linux SLL/SLL2, raw, loopback, IPv4, IPv6 extension headers), a tcpdump-filter compiler that emits a Perl closure, a flow table with lazy deadline queues for idle and TCP-close expiry, and a parallel runner using fork, pipes, select and waitpid. A deterministic traffic generator supplies ground truth for tests and the benchmark, and CI cross-checks filters against the real tcpdump binary on Ubuntu, plus macOS and perl 5.24/5.30/5.40.",
+    "hardest": "Making parallel results equal serial ones: a flow cut at a file boundary comes back as two pieces, possibly in opposite orientation, and has to be stitched with the same idle/close rules. Tests exposed that a closed flow could outlive the idle timeout, so close linger is now capped at the idle timeout; the remaining case (a TCP close itself split across files) is documented.",
+    "say": "I built a flow meter in Perl that turns tcpdump captures into NetFlow-style records, with a small compiler for tcpdump's filter language that I verify against the real tcpdump in CI. It processes about 176 thousand packets a second in one process and uses fork and pipes to split rotated captures across workers. On a 214k-packet synthetic capture every one of the 20,000 flows matched the generator's ground truth exactly."
+  }
+}
