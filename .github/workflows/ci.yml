@@ -23,11 +23,12 @@ jobs:
       fail-fast: false
       matrix:
         perl: ['5.24', '5.30', '5.40']
-    container: perl:${{ matrix.perl }}
     steps:
       - uses: actions/checkout@v4
-      - run: make test
-      - run: make bench-quick
+      # run inside the official image with docker directly: the perl:5.24
+      # image's glibc is too old for the Node runtime used by `container:` jobs
+      - name: make test && make bench-quick (perl ${{ matrix.perl }})
+        run: docker run --rm -v "$PWD:/src" -w /src perl:${{ matrix.perl }} sh -c 'perl -v | head -2 && make test && make bench-quick'
 
   macos:
     runs-on: macos-latest
